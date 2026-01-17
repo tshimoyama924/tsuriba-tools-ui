@@ -10,7 +10,6 @@ type TideResponse = {
 };
 
 function todayJst(): string {
-  // ブラウザのローカル日付でOK（JST運用前提なら十分）
   const d = new Date();
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
@@ -18,10 +17,46 @@ function todayJst(): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+/**
+ * 入力が "YYYY-MM-DD" 以外でも可能な限り YYYY-MM-DD に寄せる。
+ * - "YYYY/MM/DD" -> "YYYY-MM-DD"
+ * - "YYYY.MM.DD" -> "YYYY-MM-DD"
+ * - "YYYY-M-D"   -> "YYYY-MM-DD"
+ * それ以外はそのまま返す（API側で弾かれるならエラーに出る）
+ */
+function normalizeDate(input: string): string {
+  const s = (input ?? "").trim();
+  if (!s) return todayJst();
+
+  const m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if (!m) return s;
+
+  const yyyy = m[1];
+  const mm = String(Number(m[2])).padStart(2, "0");
+  const dd = String(Number(m[3])).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+/**
+ * APIベースURL:
+ * - 優先: VITE_API_BASE
+ * - 既定: https://api.tsuriba-guide.com
+ *
+ * 末尾スラッシュは除去して統一。
+ */
+function getApiBase(): string {
+  // 本番ビルド時（Cloudflare Pages）
+  if (import.meta.env.PROD) {
+    return "https://api.tsuriba-guide.com";
+  }
+  // ローカル開発時（Vite proxy を使う）
+  return "";
+}
+
 export default function App() {
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
-  const initialStation = params.get("station_code") ?? "D1";
-  const initialDate = params.get("date") ?? todayJst();
+  const initialStation = (params.get("station_code") ?? "D1").trim().toUpperCase();
+  const initialDate = normalizeDate(params.get("date") ?? todayJst());
 
   const [stationCode, setStationCode] = useState(initialStation);
   const [date, setDate] = useState(initialDate);
@@ -30,18 +65,45 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const fetchTides = async (st: string, dt: string) => {
+  const fetchTides = async (stRaw: string, dtRaw: string) => {
+    const st = (stRaw ?? "").trim().toUpperCase();
+    const dt = normalizeDate(dtRaw);
+
+    if (!st) {
+      setError("station_code が空です");
+      return;
+    }
+    if (!dt) {
+      setError("date が空です");
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setData(null);
 
-    const url = `/api/v1/tides?station_code=${encodeURIComponent(
+    const base = getApiBase();
+    const url = `${base}/api/v1/tides?station_code=${encodeURIComponent(
       st
     )}&date=${encodeURIComponent(dt)}`;
 
     try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const res = await fetch(url, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+      });
+
+      if (!res.ok) {
+        // 可能なら本文も読んでデバッグしやすくする（HTMLが返ってきても分かる）
+        const text = await res.text().catch(() => "");
+        const hint =
+          text && text.trim().startsWith("<")
+            ? "（HTMLが返っています。URLがPages側/別ページを指している可能性）"
+            : "";
+        throw new Error(`HTTP ${res.status} ${res.statusText} ${hint}`);
+      }
+
+      // JSON以外が返ってきたらここで落ちるが、上の text 判定が効くケースも多い
       const json = (await res.json()) as TideResponse;
       setData(json);
 
@@ -58,7 +120,6 @@ export default function App() {
   };
 
   useEffect(() => {
-    // 初回はURLパラメータ（or デフォルト）で取得
     fetchTides(initialStation, initialDate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -70,7 +131,7 @@ export default function App() {
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          fetchTides(stationCode.trim().toUpperCase(), date);
+          fetchTides(stationCode, date);
         }}
         style={{
           display: "flex",
@@ -95,22 +156,23 @@ export default function App() {
           <input
             type="date"
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={(e) => setDate(normalizeDate(e.target.value))}
             style={{ padding: 8, width: 180 }}
           />
         </label>
 
         <button
           type="submit"
-          style={{
-            padding: "10px 14px",
-            cursor: "pointer",
-          }}
+          style={{ padding: "10px 14px", cursor: "pointer" }}
           disabled={loading}
         >
           {loading ? "取得中..." : "取得"}
         </button>
       </form>
+
+      <p style={{ marginTop: 0, opacity: 0.7 }}>
+        API: <code>{getApiBase()}</code>
+      </p>
 
       {error && <p style={{ color: "red" }}>Error: {error}</p>}
       {!data && !error && loading && <p>Loading...</p>}
