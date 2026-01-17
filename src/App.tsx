@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 type TideEvent = { time: string; heightCm: number };
 type TideResponse = {
@@ -22,11 +22,10 @@ function todayJst(): string {
  * - "YYYY/MM/DD" -> "YYYY-MM-DD"
  * - "YYYY.MM.DD" -> "YYYY-MM-DD"
  * - "YYYY-M-D"   -> "YYYY-MM-DD"
- * それ以外はそのまま返す（API側で弾かれるならエラーに出る）
  */
 function normalizeDate(input: string): string {
   const s = (input ?? "").trim();
-  if (!s) return todayJst();
+  if (!s) return "";
 
   const m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
   if (!m) return s;
@@ -38,22 +37,17 @@ function normalizeDate(input: string): string {
 }
 
 /**
- * APIベースURL:
- * - 優先: VITE_API_BASE
- * - 既定: https://api.tsuriba-guide.com
- *
- * 末尾スラッシュは除去して統一。
+ * APIベースURL
+ * - PROD: 直に Azure Functions のカスタムドメインへ
+ * - DEV : "" (Vite proxy で /api -> https://api.tsuriba-guide.com)
  */
 function getApiBase(): string {
-  // 本番ビルド時（Cloudflare Pages）
-  if (import.meta.env.PROD) {
-    return "https://api.tsuriba-guide.com";
-  }
-  // ローカル開発時（Vite proxy を使う）
-  return "";
+  return import.meta.env.VITE_API_BASE ?? "";
 }
 
+
 export default function App() {
+  // 初期値は空（URLから来た場合だけ入る）
   const [stationCode, setStationCode] = useState("");
   const [date, setDate] = useState("");
 
@@ -63,14 +57,10 @@ export default function App() {
 
   const fetchTides = async (stRaw: string, dtRaw: string) => {
     const st = (stRaw ?? "").trim().toUpperCase();
-    const dt = normalizeDate(dtRaw);
+    const dt = normalizeDate(dtRaw) || todayJst(); // date未入力なら今日で補完
 
     if (!st) {
       setError("station_code が空です");
-      return;
-    }
-    if (!dt) {
-      setError("date が空です");
       return;
     }
 
@@ -90,7 +80,6 @@ export default function App() {
       });
 
       if (!res.ok) {
-        // 可能なら本文も読んでデバッグしやすくする（HTMLが返ってきても分かる）
         const text = await res.text().catch(() => "");
         const hint =
           text && text.trim().startsWith("<")
@@ -99,15 +88,14 @@ export default function App() {
         throw new Error(`HTTP ${res.status} ${res.statusText} ${hint}`);
       }
 
-      // JSON以外が返ってきたらここで落ちるが、上の text 判定が効くケースも多い
       const json = (await res.json()) as TideResponse;
       setData(json);
 
-      // URLも更新（WP iframe運用で効く）
-      const next = new URL(window.location.href);
-      next.searchParams.set("station_code", st);
-      next.searchParams.set("date", dt);
-      window.history.replaceState({}, "", next.toString());
+      // 共有したい場合だけURLに残す運用にするならここをON
+      // const next = new URL(window.location.href);
+      // next.searchParams.set("station_code", st);
+      // next.searchParams.set("date", dt);
+      // window.history.replaceState({}, "", next.toString());
     } catch (e: any) {
       setError(e?.message ?? "Failed to fetch");
     } finally {
@@ -115,25 +103,19 @@ export default function App() {
     }
   };
 
-useEffect(() => {
-  const params = new URLSearchParams(window.location.search);
+  // 初回だけ：URLクエリがあれば読んで state に入れ、すぐURLから消す
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const st = params.get("station_code");
+    const dt = params.get("date");
 
-  const st = params.get("station_code");
-  const dt = params.get("date");
+    if (st) setStationCode(st.trim().toUpperCase());
+    if (dt) setDate(normalizeDate(dt));
 
-  if (st) {
-    setStationCode(st.trim().toUpperCase());
-  }
-
-  if (dt) {
-    setDate(normalizeDate(dt));
-  }
-
-  // 読み終わったらURLからクエリを消す
-  if (st || dt) {
-    window.history.replaceState({}, "", window.location.pathname);
-  }
-}, []);
+    if (st || dt) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
 
   return (
     <main style={{ padding: 16, fontFamily: "sans-serif", maxWidth: 720 }}>
@@ -166,7 +148,7 @@ useEffect(() => {
           <span>date</span>
           <input
             type="date"
-            value={date}
+            value={date} // 空でもOK
             onChange={(e) => setDate(normalizeDate(e.target.value))}
             style={{ padding: 8, width: 180 }}
           />
@@ -182,7 +164,7 @@ useEffect(() => {
       </form>
 
       <p style={{ marginTop: 0, opacity: 0.7 }}>
-        API: <code>{getApiBase()}</code>
+        API: <code>{getApiBase() || "(dev proxy /api)"}</code>
       </p>
 
       {error && <p style={{ color: "red" }}>Error: {error}</p>}
