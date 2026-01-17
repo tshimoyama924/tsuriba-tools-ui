@@ -54,12 +54,8 @@ function getApiBase(): string {
 }
 
 export default function App() {
-  const params = useMemo(() => new URLSearchParams(window.location.search), []);
-  const initialStation = (params.get("station_code") ?? "D1").trim().toUpperCase();
-  const initialDate = normalizeDate(params.get("date") ?? todayJst());
-
-  const [stationCode, setStationCode] = useState(initialStation);
-  const [date, setDate] = useState(initialDate);
+  const [stationCode, setStationCode] = useState("");
+  const [date, setDate] = useState("");
 
   const [data, setData] = useState<TideResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -119,10 +115,25 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    fetchTides(initialStation, initialDate);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+useEffect(() => {
+  const params = new URLSearchParams(window.location.search);
+
+  const st = params.get("station_code");
+  const dt = params.get("date");
+
+  if (st) {
+    setStationCode(st.trim().toUpperCase());
+  }
+
+  if (dt) {
+    setDate(normalizeDate(dt));
+  }
+
+  // 読み終わったらURLからクエリを消す
+  if (st || dt) {
+    window.history.replaceState({}, "", window.location.pathname);
+  }
+}, []);
 
   return (
     <main style={{ padding: 16, fontFamily: "sans-serif", maxWidth: 720 }}>
