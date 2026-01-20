@@ -172,7 +172,7 @@ export default function App() {
   const hasWeekly = forecast ? forecast.weekly.length > 0 : false;
 
   return (
-    <main style={{ padding: 16, fontFamily: "sans-serif", maxWidth: 1200 }}>
+    <main style={{ padding: "8px 16px 16px", fontFamily: "sans-serif", maxWidth: 1200 }}>
       <h1>潮汐・天気ダッシュボード</h1>
 
       <form
