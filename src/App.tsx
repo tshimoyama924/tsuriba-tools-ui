@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Scatter, Legend } from "recharts";
 
 interface Station {
   station_code: string;
@@ -105,10 +105,60 @@ export default function App() {
     }
   };
 
-  const chartData = forecast ? forecast.tide.hourly_cm.map((height, index) => ({
-    time: `${String(index).padStart(2, "0")}:00`,
-    height: height !== null ? height : undefined,
-  })) : [];
+  const chartData = forecast ? Array.from({ length: 24 }, (_, h) => {
+    const height = forecast.tide.hourly_cm[h];
+    return {
+      x: h,
+      label: `${String(h).padStart(2, "0")}:00`,
+      height: height !== null ? height : undefined,
+    };
+  }) : [];
+
+  const toHourFraction = (time: string) => {
+    const [hStr, mStr = "0"] = time.split(":");
+    const h = Number(hStr);
+    const m = Number(mStr);
+    const hour = Number.isFinite(h) ? Math.min(23, Math.max(0, h)) : 0;
+    const minute = Number.isFinite(m) ? Math.min(59, Math.max(0, m)) : 0;
+    return hour + minute / 60;
+  };
+
+  const interpolateHeight = (hourFraction: number) => {
+    const baseHour = Math.floor(hourFraction);
+    const nextHour = Math.min(23, baseHour + 1);
+    const h0 = forecast?.tide.hourly_cm[baseHour];
+    if (h0 === null || h0 === undefined) return null;
+    if (baseHour === 23) return h0;
+    const h1 = forecast?.tide.hourly_cm[nextHour];
+    if (h1 === null || h1 === undefined) return h0;
+    const ratio = hourFraction - baseHour;
+    return h0 + (h1 - h0) * ratio;
+  };
+
+  const tideEvents = forecast ? [
+    ...forecast.tide.high.map(h => ({ type: "満潮" as const, time: h.time, height: h.height_cm })),
+    ...forecast.tide.low.map(l => ({ type: "干潮" as const, time: l.time, height: l.height_cm })),
+  ].sort((a, b) => {
+    const toMinutes = (t: string) => {
+      const [h, m] = t.split(":").map(Number);
+      return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
+    };
+    return toMinutes(a.time) - toMinutes(b.time);
+  }) : [];
+
+  const lowMarkers = forecast ? forecast.tide.low.map(l => {
+    const x = toHourFraction(l.time);
+    const y = interpolateHeight(x);
+    if (y === null) return null;
+    return { x, height: y };
+  }).filter((m): m is { x: number; height: number } => Boolean(m)) : [];
+
+  const highMarkers = forecast ? forecast.tide.high.map(h => {
+    const x = toHourFraction(h.time);
+    const y = interpolateHeight(x);
+    if (y === null) return null;
+    return { x, height: y };
+  }).filter((m): m is { x: number; height: number } => Boolean(m)) : [];
 
   const currentDay = forecast?.weekly.find(w => w.date === forecast.date);
 
@@ -171,42 +221,48 @@ export default function App() {
         <>
           <h2>検索結果: {forecast.station.name} ({forecast.date})</h2>
 
-          <h3>潮汐データ</h3>
-          <table style={{ borderCollapse: "collapse", width: "100%" }}>
+          <h3>満潮・干潮</h3>
+          <table style={{ borderCollapse: "collapse", width: "100%", marginBottom: 24 }}>
             <thead>
               <tr>
+                <th style={{ border: "1px solid #ccc", padding: 8 }}>種別</th>
                 <th style={{ border: "1px solid #ccc", padding: 8 }}>時刻</th>
                 <th style={{ border: "1px solid #ccc", padding: 8 }}>潮位(cm)</th>
               </tr>
             </thead>
             <tbody>
-              {forecast.tide.hourly_cm.map((height, index) => {
-                const time = `${String(index).padStart(2, "0")}:00`;
-                const isHigh = forecast.tide.high.some(h => h.time === time);
-                const isLow = forecast.tide.low.some(l => l.time === time);
-                return (
-                  <tr key={index} style={{ backgroundColor: isHigh ? "#ffcccc" : isLow ? "#ccccff" : "transparent" }}>
-                    <td style={{ border: "1px solid #ccc", padding: 8 }}>{time}</td>
-                    <td style={{ border: "1px solid #ccc", padding: 8 }}>{height !== null ? height : "-"}</td>
-                  </tr>
-                );
-              })}
+              {tideEvents.map((event, idx) => (
+                <tr key={`${event.type}-${event.time}-${idx}`}>
+                  <td style={{ border: "1px solid #ccc", padding: 8 }}>{event.type}</td>
+                  <td style={{ border: "1px solid #ccc", padding: 8 }}>{event.time}</td>
+                  <td style={{ border: "1px solid #ccc", padding: 8 }}>{event.height}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
 
-          <h3>潮汐＋日の出・日の入りグラフ</h3>
+          <h3>潮汐グラフ</h3>
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="time" />
+              <XAxis
+                dataKey="x"
+                type="number"
+                domain={[0, 23]}
+                ticks={[0, 6, 12, 18, 23]}
+                tickFormatter={(value) => `${String(Math.round(value)).padStart(2, "0")}:00`}
+                allowDecimals={false}
+              />
               <YAxis />
               <Tooltip />
-              <Line type="monotone" dataKey="height" stroke="#8884d8" />
+              <Line name="潮位" type="monotone" dataKey="height" stroke="#8884d8" dot={false} legendType="line" />
+              <Scatter name="干潮" data={lowMarkers} dataKey="height" fill="#1e88e5"  shape="circle" legendType="circle" />
+              <Scatter name="満潮" data={highMarkers} dataKey="height" fill="#e53935" shape="square" legendType="square" />
+              <Legend />
             </LineChart>
           </ResponsiveContainer>
-          <p>この日の出没データは取得できません</p>
 
-          <h3>天気・釣り予報情報</h3>
+          <h3>天気予報</h3>
           {hasToday ? (
             <div>
               <h4>当日予報</h4>
@@ -217,7 +273,7 @@ export default function App() {
             </div>
           ) : hasWeekly ? (
             <div>
-              <h4>週間予報のみ取得</h4>
+              <h4>週間予報</h4>
               {currentDay && (
                 <>
                   <p>天気: {currentDay.weather.text_ja || "不明"}</p>
