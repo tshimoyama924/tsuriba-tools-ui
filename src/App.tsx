@@ -173,7 +173,7 @@ export default function App() {
 
   return (
     <main style={{ padding: 16, fontFamily: "sans-serif", maxWidth: 1200 }}>
-      <h1>釣り場ツール UI</h1>
+      <h1>潮汐・天気ダッシュボード</h1>
 
       <form
         onSubmit={(e) => {
