@@ -1,73 +1,58 @@
-# React + TypeScript + Vite
+# 釣り場ツール UI
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+このプロジェクトは、Vite + React + TypeScript を使用した釣り場ツールのUIです。Cloudflare Pages にデプロイ可能で、潮汐情報と天気予報を表示します。
 
-Currently, two official plugins are available:
+## 機能
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- 港選択: `/api/v1/stations` から取得した港リストから選択
+- 日付選択: HTML date input で日付を指定
+- 検索: `/api/v1/fishing-forecast` を使用してデータを取得
+- 表示:
+  - 潮汐データ表 (時刻 / 潮位(cm)、高潮・低潮強調)
+  - 潮汐グラフ (Recharts 使用)
+  - 天気・釣り予報情報 (天気、風向・風速、降水確率、気温)
 
-## React Compiler
+## API
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- ベースURL: `https://api.tsuriba-guide.com`
+- 使用エンドポイント:
+  - `GET /api/v1/stations`
+  - `GET /api/v1/fishing-forecast?station_code=...&date=...`
 
-## Expanding the ESLint configuration
+## ローカル開発
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+1. 依存関係をインストール:
+   ```bash
+   npm install
+   ```
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+2. 開発サーバーを起動:
+   ```bash
+   npm run dev
+   ```
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+   Vite proxy が `/api` を `https://api.tsuriba-guide.com` に転送します。
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+## Cloudflare Pages デプロイ
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+1. ビルド:
+   ```bash
+   npm run build
+   ```
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+2. `dist/` フォルダを Cloudflare Pages にアップロード。
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+### 環境変数
+
+Cloudflare Pages のダッシュボードで `VITE_API_BASE` を設定:
+- 値: `https://api.tsuriba-guide.com` (またはカスタムドメイン)
+
+設定しない場合、デフォルトで `https://api.tsuriba-guide.com` を使用。
+
+## 技術スタック
+
+- React 19
+- TypeScript
+- Vite
+- Recharts (グラフ表示)
+- Fetch API
